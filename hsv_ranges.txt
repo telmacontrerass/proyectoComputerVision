@@ -1,4 +1,0 @@
-rosa: lower=[164, 73, 147], upper=[175, 167, 255]
-azul: lower=[95, 92, 65], upper=[109, 182, 151]
-verde: lower=[34, 57, 39], upper=[91, 134, 214]
-amarillo: lower=[22, 43, 67], upper=[37, 140, 152]
