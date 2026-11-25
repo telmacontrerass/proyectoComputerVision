@@ -150,5 +150,9 @@ def jugar():
         cv2.destroyAllWindows()
 
 
+#Se activa el modo juego entrenamiento al pulsar la tecla espacio
+#Tiene qe haberse pasado la contraseña del volante
+#Para superar la ronda, el centro de la pegatina tiene que quedarse
+#dentro del arco permitido durante 0.6 segundos seguidos
 if __name__ == "__main__":
     jugar()
