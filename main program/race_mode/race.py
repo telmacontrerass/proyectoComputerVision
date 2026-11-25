@@ -9,13 +9,13 @@ import threading
 
 FOLDER = os.path.dirname(os.path.abspath(__file__))
 
-SCREEN_WIDTH = 1000
+SCREEN_WIDTH = 900
 SCREEN_HEIGHT = 720
 
 GAME_WIDTH = 900
 GAME_HEIGHT = 650
 
-SPEED = 220
+SPEED = 150
 TURN_GAIN = 0.8
 
 MIN_AREA = 300
@@ -25,24 +25,24 @@ CAR_HEIGHT = 36
 
 START_POSITIONS = {
     1: {
-        "x": 580,
-        "y": 1050,
+        "x": 480,
+        "y": 880,
         "angle": 0
     },
     2: {
-        "x": 455,
-        "y": 550,
-        "angle": -60
+        "x": 185,
+        "y": 430,
+        "angle": 120
     },
     3: {
-        "x": 580,
-        "y": 1050,
-        "angle": 0
+        "x": 290,
+        "y": 385,
+        "angle": 120
     },
     4: {
-        "x": 580,
-        "y": 1050,
-        "angle": 0
+        "x": 450,
+        "y": 474,
+        "angle": 50
     }
 }
 
@@ -53,11 +53,13 @@ COLOR_RANGES = {
 
 CAMERA_WIDTH = 240
 CAMERA_HEIGHT = 180
+NUM_VUELTAS = 3
 
 camera_x = 15
 camera_y = 15
 
 dragging_camera = False
+
 drag_offset_x = 0
 drag_offset_y = 0
 
@@ -70,10 +72,10 @@ CARD_HEIGHT = 230
 IMAGE_HEIGHT = 185
 
 CARD_RECTS = [
-    (60, 125, 400, 230),
-    (540, 125, 400, 230),
-    (60, 405, 400, 230),
-    (540, 405, 400, 230)
+    (35, 125, 400, 230),
+    (465, 125, 400, 230),
+    (35, 405, 400, 230),
+    (465, 405, 400, 230)
 ]
 
 DIFFICULTIES = [
@@ -102,14 +104,12 @@ original_car = cv2.resize(
 )
 
 if len(original_car.shape) == 2:
-
     original_car = cv2.cvtColor(
         original_car,
         cv2.COLOR_GRAY2BGRA
     )
 
 elif original_car.shape[2] == 3:
-
     original_car = cv2.cvtColor(
         original_car,
         cv2.COLOR_BGR2BGRA
@@ -133,7 +133,6 @@ for i in range(1, 5):
     )
 
     if circuit is None:
-
         raise FileNotFoundError(
             f"Could not load circuit_{i}.png"
         )
@@ -266,8 +265,9 @@ def mouse_callback(event, mouse_x, mouse_y, flags, param):
 
 def draw_selection_screen():
 
-    screen = np.zeros(
-        (SCREEN_HEIGHT, SCREEN_WIDTH, 3),
+    screen = np.full(
+        (GAME_HEIGHT, GAME_WIDTH, 3),
+        (115, 197, 94),
         dtype=np.uint8
     )
 
@@ -275,18 +275,17 @@ def draw_selection_screen():
 
     cv2.putText(
         screen,
-        "CHOOSE YOUR CIRCUIT",
-        (205, 75),
+        "SELECCIONA EL CIRCUITO",
+        (175, 75),
         cv2.FONT_HERSHEY_DUPLEX,
         1.5,
-        (255, 255, 255),
+        (115, 197, 94),
         3
     )
 
     for i in range(4):
 
         x, y, width, height = CARD_RECTS[i]
-
         thumbnail = thumbnails[i]
 
         cv2.rectangle(
@@ -544,6 +543,30 @@ def create_circuit_view(circuit, x, y):
     return screen
 
 
+# Detect crossing of the finish line
+
+def crossed_finish_line(x1, y1, x2, y2, finish_mask):
+
+    distance = math.hypot(x2 - x1, y2 - y1)
+    steps = max(int(distance / 2), 1)
+
+    map_height, map_width = finish_mask.shape
+
+    for i in range(steps + 1):
+
+        t = i / steps
+
+        px = int(x1 + (x2 - x1) * t)
+        py = int(y1 + (y2 - y1) * t)
+
+        if 0 <= px < map_width and 0 <= py < map_height:
+
+            if finish_mask[py, px] > 0:
+                return True
+
+    return False
+
+
 # Check collisions with green area
 
 def check_collision(x, y, angle, green_mask):
@@ -600,6 +623,39 @@ def run_race(circuit, circuit_number):
         np.array([90, 255, 255])
     )
 
+    # Detect the red finish line
+
+    lower_red1 = np.array([0, 100, 100])
+    upper_red1 = np.array([10, 255, 255])
+
+    lower_red2 = np.array([170, 100, 100])
+    upper_red2 = np.array([180, 255, 255])
+
+    red_mask1 = cv2.inRange(
+        circuit_hsv,
+        lower_red1,
+        upper_red1
+    )
+
+    red_mask2 = cv2.inRange(
+        circuit_hsv,
+        lower_red2,
+        upper_red2
+    )
+
+    finish_mask = cv2.bitwise_or(
+        red_mask1,
+        red_mask2
+    )
+
+    kernel = np.ones((5, 5), np.uint8)
+
+    finish_mask = cv2.dilate(
+        finish_mask,
+        kernel,
+        iterations=1
+    )
+
     # Get starting position for the selected circuit
 
     start_position = START_POSITIONS[circuit_number]
@@ -612,7 +668,6 @@ def run_race(circuit, circuit_number):
     steering_angle = 0.0
 
     steering_wheel_center = None
-
     reference_angle = None
     pink_reference_angle = None
     green_reference_angle = None
@@ -621,6 +676,10 @@ def run_race(circuit, circuit_number):
 
     collision = False
     collision_time = 0
+
+    finish_crossings = 0
+    finish_line_armed = True
+    finished = False
 
     start_time = time.time()
     previous_time = time.time()
@@ -641,6 +700,7 @@ def run_race(circuit, circuit_number):
     camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     latest_frame = None
+
     camera_lock = threading.Lock()
     stop_camera = threading.Event()
 
@@ -692,6 +752,7 @@ def run_race(circuit, circuit_number):
 
                 if latest_frame is not None:
                     frame = latest_frame.copy()
+
                 else:
                     frame = None
 
@@ -773,7 +834,10 @@ def run_race(circuit, circuit_number):
                         current_angle - green_reference_angle
                     )
 
-            if calibrated and not collision:
+            if calibrated and not collision and not finished:
+
+                previous_x = x
+                previous_y = y
 
                 car_angle -= (
                     steering_angle * TURN_GAIN * dt
@@ -784,7 +848,45 @@ def run_race(circuit, circuit_number):
                 x += SPEED * math.cos(radians) * dt
                 y += SPEED * math.sin(radians) * dt
 
-                if check_collision(
+                if finish_line_armed:
+
+                    if crossed_finish_line(
+                        previous_x,
+                        previous_y,
+                        x,
+                        y,
+                        finish_mask
+                    ):
+
+                        finish_crossings += 1
+                        finish_line_armed = False
+
+                        print(
+                            f"Finish line crossed: {finish_crossings}"
+                        )
+
+                        if finish_crossings >= NUM_VUELTAS:
+
+                            finished = True
+
+                            print(f"{NUM_VUELTAS} LAPS COMPLETED!")
+                            print("CIRCUIT COMPLETED!")
+
+                else:
+
+                    px = int(x)
+                    py = int(y)
+
+                    if (
+                        0 <= px < finish_mask.shape[1]
+                        and
+                        0 <= py < finish_mask.shape[0]
+                    ):
+
+                        if finish_mask[py, px] == 0:
+                            finish_line_armed = True
+
+                if not finished and check_collision(
                     x,
                     y,
                     car_angle,
@@ -800,7 +902,7 @@ def run_race(circuit, circuit_number):
 
                 cv2.putText(
                     screen,
-                    "YOU CRASHED!",
+                    "Te has chocado",
                     (GAME_WIDTH // 2 - 130, 110),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     1,
@@ -819,6 +921,10 @@ def run_race(circuit, circuit_number):
 
                     start_time = time.time()
 
+                    finish_crossings = 0
+                    finish_line_armed = True
+                    finished = False
+
                     collision = False
 
                     print("Race restarted.")
@@ -827,6 +933,7 @@ def run_race(circuit, circuit_number):
 
                 if collision:
                     race_time = collision_time - start_time
+
                 else:
                     race_time = current_time - start_time
 
@@ -844,7 +951,7 @@ def run_race(circuit, circuit_number):
 
                 cv2.putText(
                     screen,
-                    "Press C to calibrate",
+                    "Presiona C para calibrar",
                     (20, 35),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.8,
@@ -886,6 +993,38 @@ def run_race(circuit, circuit_number):
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
                     (0, 0, 255),
+                    2
+                )
+
+            # Show circuit completion message
+
+            if finished:
+
+                cv2.rectangle(
+                    screen,
+                    (120, 230),
+                    (780, 420),
+                    (35, 30, 25),
+                    -1
+                )
+
+                cv2.putText(
+                    screen,
+                    "1 VUELTA COMPLETADA",
+                    (190, 305),
+                    cv2.FONT_HERSHEY_DUPLEX,
+                    1.1,
+                    (0, 255, 0),
+                    2
+                )
+
+                cv2.putText(
+                    screen,
+                    "CIRCUITO COMPLETADO!",
+                    (175, 365),
+                    cv2.FONT_HERSHEY_DUPLEX,
+                    1.1,
+                    (255, 255, 255),
                     2
                 )
 
@@ -965,6 +1104,7 @@ def run_race(circuit, circuit_number):
                 "Race",
                 cv2.WND_PROP_VISIBLE
             ) < 1:
+
                 break
 
     finally:
@@ -1029,6 +1169,7 @@ def iniciar_modo_carrera():
                     "Race",
                     cv2.WND_PROP_VISIBLE
                 ) < 1:
+
                     break
 
                 if selected_circuit is not None:
@@ -1056,6 +1197,7 @@ def iniciar_modo_carrera():
                         "Race",
                         cv2.WND_PROP_VISIBLE
                     ) < 1:
+
                         break
 
     finally:
