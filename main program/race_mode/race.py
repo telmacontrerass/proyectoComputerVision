@@ -19,9 +19,10 @@ SPEED = 150
 TURN_GAIN = 0.8
 
 MIN_AREA = 300
+ZOOM = 1.5
 
-CAR_WIDTH = 60
-CAR_HEIGHT = 36
+CAR_WIDTH = 60*ZOOM
+CAR_HEIGHT = 36*ZOOM
 
 START_POSITIONS = {
     1: {
@@ -507,22 +508,24 @@ def create_circuit_view(circuit, x, y):
 
     map_height, map_width = circuit.shape[:2]
 
-    screen = np.zeros(
-        (GAME_HEIGHT, GAME_WIDTH, 3),
-        dtype=np.uint8
-    )
-
-    half_width = GAME_WIDTH // 2
-    half_height = GAME_HEIGHT // 2
+    half_width = int(GAME_WIDTH / (2 * ZOOM))
+    half_height = int(GAME_HEIGHT / (2 * ZOOM))
 
     left = int(x) - half_width
     top = int(y) - half_height
 
+    right = left + 2 * half_width
+    bottom = top + 2 * half_height
+
+    screen = np.zeros(
+        (2 * half_height, 2 * half_width, 3),
+        dtype=np.uint8
+    )
+
     src_left = max(0, left)
     src_top = max(0, top)
-
-    src_right = min(map_width, left + GAME_WIDTH)
-    src_bottom = min(map_height, top + GAME_HEIGHT)
+    src_right = min(map_width, right)
+    src_bottom = min(map_height, bottom)
 
     dst_left = src_left - left
     dst_top = src_top - top
@@ -539,6 +542,11 @@ def create_circuit_view(circuit, x, y):
             src_top:src_bottom,
             src_left:src_right
         ]
+
+    screen = cv2.resize(
+        screen,
+        (GAME_WIDTH, GAME_HEIGHT)
+    )
 
     return screen
 
@@ -865,12 +873,12 @@ def run_race(circuit, circuit_number):
                             f"Finish line crossed: {finish_crossings}"
                         )
 
-                        if finish_crossings >= NUM_VUELTAS:
+                        if finish_crossings >= NUM_VUELTAS+1:
 
                             finished = True
 
-                            print(f"{NUM_VUELTAS} LAPS COMPLETED!")
-                            print("CIRCUIT COMPLETED!")
+                            print(f"{NUM_VUELTAS} VUELTAS COMPLETADAS!")
+                            print("CIRCUITO COMPLETADO!")
 
                 else:
 
@@ -1008,15 +1016,6 @@ def run_race(circuit, circuit_number):
                     -1
                 )
 
-                cv2.putText(
-                    screen,
-                    "1 VUELTA COMPLETADA",
-                    (190, 305),
-                    cv2.FONT_HERSHEY_DUPLEX,
-                    1.1,
-                    (0, 255, 0),
-                    2
-                )
 
                 cv2.putText(
                     screen,
