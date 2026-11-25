@@ -20,30 +20,29 @@ TURN_GAIN = 0.8
 
 MIN_AREA = 300
 
-CAR_WIDTH = 80
-CAR_HEIGHT = 48
+CAR_WIDTH = 60
+CAR_HEIGHT = 36
 
 START_POSITIONS = {
     1: {
-        "x": 480,
-        "y": 880,
+        "x": 580,
+        "y": 1050,
         "angle": 0
     },
     2: {
-        "x": 185,
-        "y": 430,
-        "angle": 120
+        "x": 455,
+        "y": 550,
+        "angle": -60
     },
-        
     3: {
-        "x": 290,
-        "y": 385,
-        "angle": 120
+        "x": 580,
+        "y": 1050,
+        "angle": 0
     },
     4: {
-        "x": 450,
-        "y": 475,
-        "angle": 50
+        "x": 580,
+        "y": 1050,
+        "angle": 0
     }
 }
 
@@ -103,12 +102,14 @@ original_car = cv2.resize(
 )
 
 if len(original_car.shape) == 2:
+
     original_car = cv2.cvtColor(
         original_car,
         cv2.COLOR_GRAY2BGRA
     )
 
 elif original_car.shape[2] == 3:
+
     original_car = cv2.cvtColor(
         original_car,
         cv2.COLOR_BGR2BGRA
@@ -132,6 +133,7 @@ for i in range(1, 5):
     )
 
     if circuit is None:
+
         raise FileNotFoundError(
             f"Could not load circuit_{i}.png"
         )
@@ -213,6 +215,8 @@ def mouse_callback(event, mouse_x, mouse_y, flags, param):
 
         if event == cv2.EVENT_LBUTTONDOWN:
 
+            # Back button
+
             if (
                 GAME_WIDTH - 65 <= mouse_x <= GAME_WIDTH - 15
                 and
@@ -222,6 +226,8 @@ def mouse_callback(event, mouse_x, mouse_y, flags, param):
                 back_requested = True
                 dragging_camera = False
                 return
+
+            # Start dragging camera
 
             if (
                 camera_x <= mouse_x <= camera_x + CAMERA_WIDTH
@@ -583,8 +589,6 @@ def run_race(circuit, circuit_number):
     current_screen = "game"
     back_requested = False
 
-    map_height, map_width = circuit.shape[:2]
-
     circuit_hsv = cv2.cvtColor(
         circuit,
         cv2.COLOR_BGR2HSV
@@ -885,6 +889,8 @@ def run_race(circuit, circuit_number):
                     2
                 )
 
+            # Back button
+
             cv2.rectangle(
                 screen,
                 (GAME_WIDTH - 65, 10),
@@ -972,70 +978,52 @@ def run_race(circuit, circuit_number):
         print("Returning to circuit selection.")
 
 
-# Main menu
+# Start race mode from main.py
 
-cv2.namedWindow(
-    "Race",
-    cv2.WINDOW_NORMAL
-)
+def iniciar_modo_carrera():
 
-cv2.resizeWindow(
-    "Race",
-    SCREEN_WIDTH,
-    SCREEN_HEIGHT
-)
+    global current_screen
+    global selected_circuit
+    global back_requested
 
-cv2.setMouseCallback(
-    "Race",
-    mouse_callback
-)
+    current_screen = "menu"
+    selected_circuit = None
+    back_requested = False
 
-print("Choose a circuit to start.")
+    cv2.namedWindow(
+        "Race",
+        cv2.WINDOW_NORMAL
+    )
 
-try:
+    cv2.resizeWindow(
+        "Race",
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT
+    )
 
-    while True:
+    cv2.setMouseCallback(
+        "Race",
+        mouse_callback
+    )
 
-        if current_screen == "menu":
+    print("Choose a circuit to start.")
 
-            menu = draw_selection_screen()
+    try:
 
-            cv2.imshow("Race", menu)
+        while True:
 
-            key = cv2.waitKey(20) & 0xFF
+            if current_screen == "menu":
 
-            if key == 27:
-                break
+                menu = draw_selection_screen()
 
-            if cv2.getWindowProperty(
-                "Race",
-                cv2.WND_PROP_VISIBLE
-            ) < 1:
-                break
+                cv2.imshow("Race", menu)
 
-            if selected_circuit is not None:
+                key = cv2.waitKey(20) & 0xFF
 
-                # Save the circuit number before resetting the selection
+                # Press Q to return to the main menu
 
-                circuit_number = selected_circuit + 1
-
-                circuit_to_play = circuits[selected_circuit]
-
-                print(
-                    f"Selected circuit {circuit_number}: "
-                    f"{DIFFICULTIES[selected_circuit]}"
-                )
-
-                selected_circuit = None
-
-                run_race(
-                    circuit_to_play,
-                    circuit_number
-                )
-
-                current_screen = "menu"
-
-                back_requested = False
+                if key == ord("q"):
+                    break
 
                 if cv2.getWindowProperty(
                     "Race",
@@ -1043,8 +1031,39 @@ try:
                 ) < 1:
                     break
 
-finally:
+                if selected_circuit is not None:
 
-    cv2.destroyAllWindows()
+                    circuit_number = selected_circuit + 1
 
-    print("Game closed.")
+                    circuit_to_play = circuits[selected_circuit]
+
+                    print(
+                        f"Selected circuit {circuit_number}: "
+                        f"{DIFFICULTIES[selected_circuit]}"
+                    )
+
+                    selected_circuit = None
+
+                    run_race(
+                        circuit_to_play,
+                        circuit_number
+                    )
+
+                    current_screen = "menu"
+                    back_requested = False
+
+                    if cv2.getWindowProperty(
+                        "Race",
+                        cv2.WND_PROP_VISIBLE
+                    ) < 1:
+                        break
+
+    finally:
+
+        cv2.destroyWindow("Race")
+
+        current_screen = "menu"
+        selected_circuit = None
+        back_requested = False
+
+        print("Exiting race mode.")

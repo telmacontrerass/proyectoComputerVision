@@ -3,44 +3,37 @@ import cv2
 import numpy as np
 
 from password_function import comprobar_contrasena
+from race_mode.race import iniciar_modo_carrera
 
 
-# Contraseñas de cada modo
 CONTRASENA_PRACTICA = ["azul", "amarillo", "rosa", "verde"]
-
-# Contraseña  para carrera
 CONTRASENA_CARRERA = ["rosa", "verde", "amarillo", "azul"]
 
-
-# Tamaño de las pantallas
 ANCHO = 800
 ALTO = 500
 
-
-# Variable para guardar la selección del menú
 seleccion = None
 
 
-# Detectar clics del ratón
 def seleccionar_modo(evento, x, y, flags, param):
 
     global seleccion
 
     if evento == cv2.EVENT_LBUTTONDOWN:
 
-        # Botón modo práctica
         if 150 <= x <= 380 and 220 <= y <= 320:
             seleccion = "practica"
 
-        # Botón modo carrera
         elif 420 <= x <= 650 and 220 <= y <= 320:
             seleccion = "carrera"
 
 
-# Crear pantalla principal
 def mostrar_menu():
 
-    pantalla = np.zeros((ALTO, ANCHO, 3), dtype=np.uint8)
+    pantalla = np.zeros(
+        (ALTO, ANCHO, 3),
+        dtype=np.uint8
+    )
 
     cv2.putText(
         pantalla,
@@ -52,7 +45,8 @@ def mostrar_menu():
         3
     )
 
-    # Botón práctica
+    # Practice button
+
     cv2.rectangle(
         pantalla,
         (150, 220),
@@ -71,7 +65,8 @@ def mostrar_menu():
         2
     )
 
-    # Botón carrera
+    # Race button
+
     cv2.rectangle(
         pantalla,
         (420, 220),
@@ -103,10 +98,12 @@ def mostrar_menu():
     return pantalla
 
 
-# Mostrar pantalla de modo en proceso
 def mostrar_modo(modo):
 
-    pantalla = np.zeros((ALTO, ANCHO, 3), dtype=np.uint8)
+    pantalla = np.zeros(
+        (ALTO, ANCHO, 3),
+        dtype=np.uint8
+    )
 
     texto = "MODO " + modo.upper()
 
@@ -153,65 +150,108 @@ def mostrar_modo(modo):
     return pantalla
 
 
-# Bucle principal
-cv2.namedWindow("Menu")
-cv2.setMouseCallback("Menu", seleccionar_modo)
+def ejecutar_practica():
 
-while True:
+    pantalla = mostrar_modo("practica")
 
-    seleccion = None
+    cv2.namedWindow("Menu")
 
-    # Mostrar menú principal
-    while seleccion is None:
+    cv2.imshow("Menu", pantalla)
 
-        pantalla = mostrar_menu()
+    print("Entering practice mode.")
 
-        cv2.imshow("Menu", pantalla)
+    while True:
 
         tecla = cv2.waitKey(1) & 0xFF
 
         if tecla == ord("q"):
-            cv2.destroyAllWindows()
-            exit()
+            break
 
-    # Seleccionar contraseña según el modo
-    if seleccion == "practica":
+        if cv2.getWindowProperty(
+            "Menu",
+            cv2.WND_PROP_VISIBLE
+        ) < 1:
+            break
 
-        contrasena = CONTRASENA_PRACTICA
-        modo = "practica"
-
-    else:
-
-        contrasena = CONTRASENA_CARRERA
-        modo = "carrera"
-
-    # Ocultar el menú mientras se introduce la contraseña
     cv2.destroyWindow("Menu")
 
-    # Comprobar contraseña
-    correcta = comprobar_contrasena(contrasena)
 
-    if correcta:
+def main():
 
-        # Mostrar pantalla correspondiente
-        pantalla = mostrar_modo(modo)
+    global seleccion
 
-        cv2.namedWindow("Menu")
-        cv2.imshow("Menu", pantalla)
+    try:
 
-        print("Entrando en modo", modo)
-
-        # Esperar hasta pulsar Q para volver al menú
         while True:
 
-            tecla = cv2.waitKey(1) & 0xFF
+            seleccion = None
 
-            if tecla == ord("q"):
-                break
+            cv2.namedWindow("Menu")
 
-        cv2.destroyWindow("Menu")
+            cv2.setMouseCallback(
+                "Menu",
+                seleccionar_modo
+            )
 
-    # Si es incorrecta, el bucle vuelve al menú principal
+            # Main menu loop
+
+            while seleccion is None:
+
+                pantalla = mostrar_menu()
+
+                cv2.imshow("Menu", pantalla)
+
+                tecla = cv2.waitKey(1) & 0xFF
+
+                if tecla == ord("q"):
+                    return
+
+                if cv2.getWindowProperty(
+                    "Menu",
+                    cv2.WND_PROP_VISIBLE
+                ) < 1:
+                    return
+
+            # Select password according to the chosen mode
+
+            if seleccion == "practica":
+
+                contrasena = CONTRASENA_PRACTICA
+                modo = "practica"
+
+            else:
+
+                contrasena = CONTRASENA_CARRERA
+                modo = "carrera"
+
+            # Close main menu while entering password
+
+            cv2.destroyWindow("Menu")
+
+            correcta = comprobar_contrasena(contrasena)
+
+            if correcta:
+
+                print("Entering mode:", modo)
+
+                if modo == "practica":
+
+                    ejecutar_practica()
+
+                elif modo == "carrera":
+
+                    iniciar_modo_carrera()
+
+            else:
+
+                print("Incorrect password.")
+
+            # When the selected mode finishes, return to main menu
+
+    finally:
+
+        cv2.destroyAllWindows()
 
 
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()
