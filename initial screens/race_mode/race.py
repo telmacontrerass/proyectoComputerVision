@@ -1,3 +1,4 @@
+
 import cv2
 import numpy as np
 import time
@@ -5,28 +6,52 @@ import math
 import os
 import threading
 
-SCREEN_WIDTH = 900
-SCREEN_HEIGHT = 650
+
+FOLDER = os.path.dirname(os.path.abspath(__file__))
+
+SCREEN_WIDTH = 1000
+SCREEN_HEIGHT = 720
+
+GAME_WIDTH = 900
+GAME_HEIGHT = 650
 
 SPEED = 220
 TURN_GAIN = 0.8
 
 MIN_AREA = 300
 
-CAR_WIDTH = 60
-CAR_HEIGHT = 36
+CAR_WIDTH = 80
+CAR_HEIGHT = 48
 
-START_X = 495
-START_Y = 875
-
-INITIAL_DIRECTION = 0
+START_POSITIONS = {
+    1: {
+        "x": 480,
+        "y": 880,
+        "angle": 0
+    },
+    2: {
+        "x": 185,
+        "y": 430,
+        "angle": 120
+    },
+        
+    3: {
+        "x": 290,
+        "y": 385,
+        "angle": 120
+    },
+    4: {
+        "x": 450,
+        "y": 475,
+        "angle": 50
+    }
+}
 
 COLOR_RANGES = {
     "pink": ((164, 73, 147), (175, 167, 255)),
     "green": ((34, 57, 39), (91, 134, 214))
 }
 
-# Camera overlay
 CAMERA_WIDTH = 240
 CAMERA_HEIGHT = 180
 
@@ -37,31 +62,40 @@ dragging_camera = False
 drag_offset_x = 0
 drag_offset_y = 0
 
-FOLDER = os.path.dirname(os.path.abspath(__file__))
+selected_circuit = None
+back_requested = False
+current_screen = "menu"
 
-circuit_path = os.path.join(FOLDER, "circuit_1.png")
+CARD_WIDTH = 400
+CARD_HEIGHT = 230
+IMAGE_HEIGHT = 185
+
+CARD_RECTS = [
+    (60, 125, 400, 230),
+    (540, 125, 400, 230),
+    (60, 405, 400, 230),
+    (540, 405, 400, 230)
+]
+
+DIFFICULTIES = [
+    "FACIL",
+    "INTERMEDIO",
+    "DIFICIL",
+    "EXPERTO"
+]
+
+
+# Load car image
+
 car_path = os.path.join(FOLDER, "car.png")
-
-circuit = cv2.imdecode(
-    np.fromfile(circuit_path, dtype=np.uint8),
-    cv2.IMREAD_COLOR
-)
 
 original_car = cv2.imdecode(
     np.fromfile(car_path, dtype=np.uint8),
     cv2.IMREAD_UNCHANGED
 )
 
-if circuit is None:
-    raise FileNotFoundError("Could not load circuit.png")
-
 if original_car is None:
     raise FileNotFoundError("Could not load car.png")
-
-MAP_HEIGHT, MAP_WIDTH = circuit.shape[:2]
-
-print("Circuit loaded successfully.")
-print("Car loaded successfully.")
 
 original_car = cv2.resize(
     original_car,
@@ -80,56 +114,246 @@ elif original_car.shape[2] == 3:
         cv2.COLOR_BGR2BGRA
     )
 
-circuit_hsv = cv2.cvtColor(
-    circuit,
-    cv2.COLOR_BGR2HSV
-)
 
-green_mask = cv2.inRange(
-    circuit_hsv,
-    np.array([35, 40, 100]),
-    np.array([90, 255, 255])
-)
+# Load the four circuits
 
-camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+circuits = []
 
-if not camera.isOpened():
-    raise RuntimeError("Could not open the camera.")
+for i in range(1, 5):
 
-camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    path = os.path.join(
+        FOLDER,
+        f"circuit_{i}.png"
+    )
 
-latest_frame = None
-camera_lock = threading.Lock()
-stop_camera = False
+    circuit = cv2.imdecode(
+        np.fromfile(path, dtype=np.uint8),
+        cv2.IMREAD_COLOR
+    )
 
+    if circuit is None:
+        raise FileNotFoundError(
+            f"Could not load circuit_{i}.png"
+        )
 
-def read_camera():
+    circuits.append(circuit)
 
-    global latest_frame
-
-    while not stop_camera:
-
-        ok, frame = camera.read()
-
-        if ok and frame is not None:
-
-            with camera_lock:
-                latest_frame = frame
-
-        else:
-            time.sleep(0.01)
+print("All four circuits loaded successfully.")
 
 
-camera_thread = threading.Thread(
-    target=read_camera,
-    daemon=True
-)
+# Prepare circuit thumbnails
 
-camera_thread.start()
+def create_thumbnail(image):
 
-print("Camera thread started.")
+    height, width = image.shape[:2]
+
+    scale = min(
+        CARD_WIDTH / width,
+        IMAGE_HEIGHT / height
+    )
+
+    new_width = int(width * scale)
+    new_height = int(height * scale)
+
+    resized = cv2.resize(
+        image,
+        (new_width, new_height)
+    )
+
+    thumbnail = np.zeros(
+        (IMAGE_HEIGHT, CARD_WIDTH, 3),
+        dtype=np.uint8
+    )
+
+    x_offset = (CARD_WIDTH - new_width) // 2
+    y_offset = (IMAGE_HEIGHT - new_height) // 2
+
+    thumbnail[
+        y_offset:y_offset + new_height,
+        x_offset:x_offset + new_width
+    ] = resized
+
+    return thumbnail
+
+
+thumbnails = [
+    create_thumbnail(circuit)
+    for circuit in circuits
+]
+
+
+# Handle mouse clicks and camera movement
+
+def mouse_callback(event, mouse_x, mouse_y, flags, param):
+
+    global selected_circuit
+    global back_requested
+    global dragging_camera
+    global drag_offset_x, drag_offset_y
+    global camera_x, camera_y
+
+    if current_screen == "menu":
+
+        if event == cv2.EVENT_LBUTTONDOWN:
+
+            for i, rect in enumerate(CARD_RECTS):
+
+                x, y, width, height = rect
+
+                if (
+                    x <= mouse_x <= x + width
+                    and
+                    y <= mouse_y <= y + height
+                ):
+
+                    selected_circuit = i
+                    return
+
+    elif current_screen == "game":
+
+        if event == cv2.EVENT_LBUTTONDOWN:
+
+            if (
+                GAME_WIDTH - 65 <= mouse_x <= GAME_WIDTH - 15
+                and
+                10 <= mouse_y <= 50
+            ):
+
+                back_requested = True
+                dragging_camera = False
+                return
+
+            if (
+                camera_x <= mouse_x <= camera_x + CAMERA_WIDTH
+                and
+                camera_y <= mouse_y <= camera_y + CAMERA_HEIGHT
+            ):
+
+                dragging_camera = True
+
+                drag_offset_x = mouse_x - camera_x
+                drag_offset_y = mouse_y - camera_y
+
+        elif event == cv2.EVENT_MOUSEMOVE:
+
+            if dragging_camera:
+
+                camera_x = mouse_x - drag_offset_x
+                camera_y = mouse_y - drag_offset_y
+
+                camera_x = max(
+                    0,
+                    min(camera_x, GAME_WIDTH - CAMERA_WIDTH)
+                )
+
+                camera_y = max(
+                    0,
+                    min(camera_y, GAME_HEIGHT - CAMERA_HEIGHT)
+                )
+
+        elif event == cv2.EVENT_LBUTTONUP:
+
+            dragging_camera = False
+
+
+# Draw circuit selection screen
+
+def draw_selection_screen():
+
+    screen = np.zeros(
+        (SCREEN_HEIGHT, SCREEN_WIDTH, 3),
+        dtype=np.uint8
+    )
+
+    screen[:] = (35, 30, 25)
+
+    cv2.putText(
+        screen,
+        "CHOOSE YOUR CIRCUIT",
+        (205, 75),
+        cv2.FONT_HERSHEY_DUPLEX,
+        1.5,
+        (255, 255, 255),
+        3
+    )
+
+    for i in range(4):
+
+        x, y, width, height = CARD_RECTS[i]
+
+        thumbnail = thumbnails[i]
+
+        cv2.rectangle(
+            screen,
+            (x - 5, y - 5),
+            (x + width + 5, y + height + 5),
+            (80, 80, 80),
+            -1
+        )
+
+        screen[
+            y:y + IMAGE_HEIGHT,
+            x:x + CARD_WIDTH
+        ] = thumbnail
+
+        cv2.rectangle(
+            screen,
+            (x, y),
+            (x + CARD_WIDTH, y + IMAGE_HEIGHT),
+            (255, 255, 255),
+            2
+        )
+
+        difficulty = DIFFICULTIES[i]
+
+        text_size = cv2.getTextSize(
+            difficulty,
+            cv2.FONT_HERSHEY_DUPLEX,
+            0.9,
+            2
+        )[0]
+
+        text_x = x + (width - text_size[0]) // 2
+
+        cv2.putText(
+            screen,
+            difficulty,
+            (text_x, y + IMAGE_HEIGHT + 35),
+            cv2.FONT_HERSHEY_DUPLEX,
+            0.9,
+            (255, 255, 255),
+            2
+        )
+
+    cv2.putText(
+        screen,
+        "Click on a circuit to play",
+        (350, 685),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (180, 180, 180),
+        1
+    )
+
+    return screen
+
+
+def normalize_angle(angle):
+
+    return (angle + 180) % 360 - 180
+
+
+def calculate_angle(point1, point2):
+
+    dx = point2[0] - point1[0]
+    dy = point2[1] - point1[1]
+
+    return math.degrees(
+        math.atan2(dy, dx)
+    )
+
+
+# Detect steering wheel markers
 
 def detect_marker(frame, color):
 
@@ -174,6 +398,7 @@ def detect_marker(frame, color):
         area = cv2.contourArea(contour)
 
         if area > largest_area:
+
             largest_area = area
             best_contour = contour
 
@@ -190,19 +415,8 @@ def detect_marker(frame, color):
 
     return (cx, cy)
 
-def normalize_angle(angle):
 
-    return (angle + 180) % 360 - 180
-
-
-def calculate_angle(point1, point2):
-
-    dx = point2[0] - point1[0]
-    dy = point2[1] - point1[1]
-
-    return math.degrees(
-        math.atan2(dy, dx)
-    )
+# Rotate car
 
 def rotate_car(angle):
 
@@ -239,35 +453,8 @@ def rotate_car(angle):
         borderValue=(0, 0, 0, 0)
     )
 
-def check_collision(x, y, angle):
 
-    radians = math.radians(angle)
-
-    cosine = math.cos(radians)
-    sine = math.sin(radians)
-
-    for dx in range(-22, 23, 6):
-
-        for dy in range(-13, 14, 6):
-
-            px = int(
-                x + dx * cosine - dy * sine
-            )
-
-            py = int(
-                y + dx * sine + dy * cosine
-            )
-
-            if px < 0 or px >= MAP_WIDTH:
-                return True
-
-            if py < 0 or py >= MAP_HEIGHT:
-                return True
-
-            if green_mask[py, px] > 0:
-                return True
-
-    return False
+# Draw car
 
 def draw_car(image, car, x, y):
 
@@ -308,15 +495,20 @@ def draw_car(image, car, x, y):
         + (1 - alpha) * roi
     ).astype(np.uint8)
 
-def create_circuit_view(x, y):
+
+# Create visible circuit area
+
+def create_circuit_view(circuit, x, y):
+
+    map_height, map_width = circuit.shape[:2]
 
     screen = np.zeros(
-        (SCREEN_HEIGHT, SCREEN_WIDTH, 3),
+        (GAME_HEIGHT, GAME_WIDTH, 3),
         dtype=np.uint8
     )
 
-    half_width = SCREEN_WIDTH // 2
-    half_height = SCREEN_HEIGHT // 2
+    half_width = GAME_WIDTH // 2
+    half_height = GAME_HEIGHT // 2
 
     left = int(x) - half_width
     top = int(y) - half_height
@@ -324,8 +516,8 @@ def create_circuit_view(x, y):
     src_left = max(0, left)
     src_top = max(0, top)
 
-    src_right = min(MAP_WIDTH, left + SCREEN_WIDTH)
-    src_bottom = min(MAP_HEIGHT, top + SCREEN_HEIGHT)
+    src_right = min(map_width, left + GAME_WIDTH)
+    src_bottom = min(map_height, top + GAME_HEIGHT)
 
     dst_left = src_left - left
     dst_top = src_top - top
@@ -345,173 +537,202 @@ def create_circuit_view(x, y):
 
     return screen
 
-def move_camera(event, mouse_x, mouse_y, flags, param):
 
-    global camera_x, camera_y
-    global dragging_camera
-    global drag_offset_x, drag_offset_y
+# Check collisions with green area
 
-    if event == cv2.EVENT_LBUTTONDOWN:
+def check_collision(x, y, angle, green_mask):
 
-        if (
-            camera_x <= mouse_x <= camera_x + CAMERA_WIDTH
-            and
-            camera_y <= mouse_y <= camera_y + CAMERA_HEIGHT
-        ):
+    map_height, map_width = green_mask.shape
 
-            dragging_camera = True
+    radians = math.radians(angle)
 
-            drag_offset_x = mouse_x - camera_x
-            drag_offset_y = mouse_y - camera_y
+    cosine = math.cos(radians)
+    sine = math.sin(radians)
 
-    elif event == cv2.EVENT_MOUSEMOVE:
+    for dx in range(-22, 23, 6):
 
-        if dragging_camera:
+        for dy in range(-13, 14, 6):
 
-            camera_x = mouse_x - drag_offset_x
-            camera_y = mouse_y - drag_offset_y
-
-            camera_x = max(
-                0,
-                min(camera_x, SCREEN_WIDTH - CAMERA_WIDTH)
+            px = int(
+                x + dx * cosine - dy * sine
             )
 
-            camera_y = max(
-                0,
-                min(camera_y, SCREEN_HEIGHT - CAMERA_HEIGHT)
+            py = int(
+                y + dx * sine + dy * cosine
             )
 
-    elif event == cv2.EVENT_LBUTTONUP:
+            if px < 0 or px >= map_width:
+                return True
 
-        dragging_camera = False
+            if py < 0 or py >= map_height:
+                return True
 
-x = float(START_X)
-y = float(START_Y)
+            if green_mask[py, px] > 0:
+                return True
 
-car_angle = float(INITIAL_DIRECTION)
+    return False
 
-steering_angle = 0.0
 
-steering_wheel_center = None
+# Run selected race
 
-reference_angle = None
-pink_reference_angle = None
-green_reference_angle = None
+def run_race(circuit, circuit_number):
 
-calibrated = False
+    global current_screen
+    global back_requested
 
-start_time = time.time()
-previous_time = time.time()
+    current_screen = "game"
+    back_requested = False
 
-collision = False
-collision_time = 0
+    map_height, map_width = circuit.shape[:2]
 
-cv2.namedWindow("Race", cv2.WINDOW_NORMAL)
+    circuit_hsv = cv2.cvtColor(
+        circuit,
+        cv2.COLOR_BGR2HSV
+    )
 
-cv2.resizeWindow(
-    "Race",
-    SCREEN_WIDTH,
-    SCREEN_HEIGHT
-)
+    green_mask = cv2.inRange(
+        circuit_hsv,
+        np.array([35, 40, 100]),
+        np.array([90, 255, 255])
+    )
 
-cv2.setMouseCallback(
-    "Race",
-    move_camera
-)
+    # Get starting position for the selected circuit
 
-print("Game started.")
-print("Place the steering wheel straight and press C to calibrate.")
+    start_position = START_POSITIONS[circuit_number]
 
-try:
+    x = float(start_position["x"])
+    y = float(start_position["y"])
 
-    while True:
+    car_angle = float(start_position["angle"])
 
-        current_time = time.time()
+    steering_angle = 0.0
 
-        dt = min(
-            current_time - previous_time,
-            0.05
-        )
+    steering_wheel_center = None
 
-        previous_time = current_time
+    reference_angle = None
+    pink_reference_angle = None
+    green_reference_angle = None
 
-        # ------------------------------------------
-        # GET LATEST CAMERA FRAME
-        # ------------------------------------------
+    calibrated = False
 
-        with camera_lock:
+    collision = False
+    collision_time = 0
 
-            if latest_frame is not None:
-                frame = latest_frame.copy()
+    start_time = time.time()
+    previous_time = time.time()
+
+    camera = cv2.VideoCapture(
+        0,
+        cv2.CAP_DSHOW
+    )
+
+    if not camera.isOpened():
+
+        print("Could not open the camera.")
+        camera.release()
+        return
+
+    camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+    latest_frame = None
+    camera_lock = threading.Lock()
+    stop_camera = threading.Event()
+
+    def read_camera():
+
+        nonlocal latest_frame
+
+        while not stop_camera.is_set():
+
+            ok, frame = camera.read()
+
+            if ok and frame is not None:
+
+                with camera_lock:
+                    latest_frame = frame
+
             else:
-                frame = None
+                time.sleep(0.01)
 
-        screen = create_circuit_view(x, y)
+    camera_thread = threading.Thread(
+        target=read_camera,
+        daemon=True
+    )
 
-        # Draw car in the centre
-        rotated_car = rotate_car(car_angle)
+    camera_thread.start()
 
-        draw_car(
-            screen,
-            rotated_car,
-            SCREEN_WIDTH // 2,
-            SCREEN_HEIGHT // 2
-        )
+    print(
+        f"Race started: circuit {circuit_number}. "
+        "Press C to calibrate."
+    )
 
-        if calibrated:
+    try:
 
-            if collision:
-                race_time = collision_time - start_time
-            else:
-                race_time = current_time - start_time
+        while True:
 
-            cv2.putText(
-                screen,
-                f"Time: {race_time:.1f} s",
-                (20, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 255),
-                2
+            if back_requested:
+                break
+
+            current_time = time.time()
+
+            dt = min(
+                current_time - previous_time,
+                0.05
             )
 
-        else:
+            previous_time = current_time
 
-            cv2.putText(
-                screen,
-                "Press C to calibrate",
-                (20, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 255),
-                2
+            with camera_lock:
+
+                if latest_frame is not None:
+                    frame = latest_frame.copy()
+                else:
+                    frame = None
+
+            screen = create_circuit_view(
+                circuit,
+                x,
+                y
             )
 
-        if frame is not None:
+            rotated_car = rotate_car(car_angle)
 
-            pink = detect_marker(frame, "pink")
-            green = detect_marker(frame, "green")
+            draw_car(
+                screen,
+                rotated_car,
+                GAME_WIDTH // 2,
+                GAME_HEIGHT // 2
+            )
 
-            # Draw detected markers
-            if pink is not None:
+            pink = None
+            green = None
 
-                cv2.circle(
-                    frame,
-                    pink,
-                    10,
-                    (180, 105, 255),
-                    -1
-                )
+            if frame is not None:
 
-            if green is not None:
+                pink = detect_marker(frame, "pink")
+                green = detect_marker(frame, "green")
 
-                cv2.circle(
-                    frame,
-                    green,
-                    10,
-                    (0, 200, 0),
-                    -1
-                )
+                if pink is not None:
+
+                    cv2.circle(
+                        frame,
+                        pink,
+                        10,
+                        (180, 105, 255),
+                        -1
+                    )
+
+                if green is not None:
+
+                    cv2.circle(
+                        frame,
+                        green,
+                        10,
+                        (0, 200, 0),
+                        -1
+                    )
 
             if calibrated:
 
@@ -559,86 +780,142 @@ try:
                 x += SPEED * math.cos(radians) * dt
                 y += SPEED * math.sin(radians) * dt
 
-                if check_collision(x, y, car_angle):
+                if check_collision(
+                    x,
+                    y,
+                    car_angle,
+                    green_mask
+                ):
 
                     collision = True
                     collision_time = current_time
 
                     print("YOU CRASHED!")
 
-        else:
+            if collision:
 
-            cv2.putText(
-                screen,
-                "Waiting for camera...",
-                (20, 70),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 0, 255),
-                2
-            )
+                cv2.putText(
+                    screen,
+                    "YOU CRASHED!",
+                    (GAME_WIDTH // 2 - 130, 110),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (0, 0, 255),
+                    3
+                )
 
-        if collision:
+                if current_time - collision_time >= 1.5:
 
-            cv2.putText(
-                screen,
-                "YOU CRASHED!",
-                (SCREEN_WIDTH // 2 - 130, 100),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 0, 255),
-                3
-            )
+                    # Reset car to the starting position of this circuit
 
-            if current_time - collision_time >= 1.5:
+                    x = float(start_position["x"])
+                    y = float(start_position["y"])
 
-                x = float(START_X)
-                y = float(START_Y)
+                    car_angle = float(start_position["angle"])
 
-                car_angle = float(INITIAL_DIRECTION)
+                    start_time = time.time()
 
-                start_time = time.time()
+                    collision = False
 
-                collision = False
+                    print("Race restarted.")
 
-                print("Race restarted.")
+            if calibrated:
 
-        if frame is not None:
+                if collision:
+                    race_time = collision_time - start_time
+                else:
+                    race_time = current_time - start_time
 
-            mirrored_frame = cv2.flip(frame, 1)
+                cv2.putText(
+                    screen,
+                    f"Time: {race_time:.1f} s",
+                    (20, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (255, 255, 255),
+                    2
+                )
 
-            camera_image = cv2.resize(
-                mirrored_frame,
-                (CAMERA_WIDTH, CAMERA_HEIGHT)
-            )
+            else:
 
-            screen[
-                camera_y:camera_y + CAMERA_HEIGHT,
-                camera_x:camera_x + CAMERA_WIDTH
-            ] = camera_image
+                cv2.putText(
+                    screen,
+                    "Press C to calibrate",
+                    (20, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (255, 255, 255),
+                    2
+                )
+
+            if frame is not None:
+
+                mirrored_frame = cv2.flip(frame, 1)
+
+                camera_image = cv2.resize(
+                    mirrored_frame,
+                    (CAMERA_WIDTH, CAMERA_HEIGHT)
+                )
+
+                screen[
+                    camera_y:camera_y + CAMERA_HEIGHT,
+                    camera_x:camera_x + CAMERA_WIDTH
+                ] = camera_image
+
+                cv2.rectangle(
+                    screen,
+                    (camera_x - 2, camera_y - 2),
+                    (
+                        camera_x + CAMERA_WIDTH + 2,
+                        camera_y + CAMERA_HEIGHT + 2
+                    ),
+                    (255, 255, 255),
+                    2
+                )
+
+            else:
+
+                cv2.putText(
+                    screen,
+                    "Waiting for camera...",
+                    (20, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 0, 255),
+                    2
+                )
 
             cv2.rectangle(
                 screen,
-                (camera_x - 2, camera_y - 2),
-                (
-                    camera_x + CAMERA_WIDTH + 2,
-                    camera_y + CAMERA_HEIGHT + 2
-                ),
+                (GAME_WIDTH - 65, 10),
+                (GAME_WIDTH - 15, 50),
+                (50, 50, 50),
+                -1
+            )
+
+            cv2.rectangle(
+                screen,
+                (GAME_WIDTH - 65, 10),
+                (GAME_WIDTH - 15, 50),
                 (255, 255, 255),
                 2
             )
 
-        cv2.imshow("Race", screen)
+            cv2.putText(
+                screen,
+                "<",
+                (GAME_WIDTH - 52, 41),
+                cv2.FONT_HERSHEY_DUPLEX,
+                1,
+                (255, 255, 255),
+                2
+            )
 
-        # IMPORTANT: Process window events every frame
-        key = cv2.waitKey(1) & 0xFF
+            cv2.imshow("Race", screen)
 
-        if key == ord("c") and not calibrated:
+            key = cv2.waitKey(1) & 0xFF
 
-            if frame is not None:
-
-                pink = detect_marker(frame, "pink")
-                green = detect_marker(frame, "green")
+            if key == ord("c") and not calibrated:
 
                 if pink is not None and green is not None:
 
@@ -675,22 +952,98 @@ try:
                         "Both pink and green markers must be visible."
                     )
 
-        if key == 27:
-            break
+            if key == 27:
+                break
 
-        if cv2.getWindowProperty(
-            "Race",
-            cv2.WND_PROP_VISIBLE
-        ) < 1:
-            break
+            if cv2.getWindowProperty(
+                "Race",
+                cv2.WND_PROP_VISIBLE
+            ) < 1:
+                break
+
+    finally:
+
+        stop_camera.set()
+
+        camera.release()
+
+        camera_thread.join(timeout=1.0)
+
+        print("Returning to circuit selection.")
+
+
+# Main menu
+
+cv2.namedWindow(
+    "Race",
+    cv2.WINDOW_NORMAL
+)
+
+cv2.resizeWindow(
+    "Race",
+    SCREEN_WIDTH,
+    SCREEN_HEIGHT
+)
+
+cv2.setMouseCallback(
+    "Race",
+    mouse_callback
+)
+
+print("Choose a circuit to start.")
+
+try:
+
+    while True:
+
+        if current_screen == "menu":
+
+            menu = draw_selection_screen()
+
+            cv2.imshow("Race", menu)
+
+            key = cv2.waitKey(20) & 0xFF
+
+            if key == 27:
+                break
+
+            if cv2.getWindowProperty(
+                "Race",
+                cv2.WND_PROP_VISIBLE
+            ) < 1:
+                break
+
+            if selected_circuit is not None:
+
+                # Save the circuit number before resetting the selection
+
+                circuit_number = selected_circuit + 1
+
+                circuit_to_play = circuits[selected_circuit]
+
+                print(
+                    f"Selected circuit {circuit_number}: "
+                    f"{DIFFICULTIES[selected_circuit]}"
+                )
+
+                selected_circuit = None
+
+                run_race(
+                    circuit_to_play,
+                    circuit_number
+                )
+
+                current_screen = "menu"
+
+                back_requested = False
+
+                if cv2.getWindowProperty(
+                    "Race",
+                    cv2.WND_PROP_VISIBLE
+                ) < 1:
+                    break
 
 finally:
-
-    stop_camera = True
-
-    camera.release()
-
-    camera_thread.join(timeout=1.0)
 
     cv2.destroyAllWindows()
 
