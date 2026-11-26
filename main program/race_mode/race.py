@@ -16,20 +16,20 @@ GAME_HEIGHT = 650
 # General game settings
 TURN_GAIN = 0.8
 ZOOM = 1.5
-
-# Customize speed and car size for each circuit.
-# car_scale: 1.0 = base size; 1.2 = 20% larger; 0.8 = 20% smaller.
-CIRCUIT_SETTINGS = {
-    1: {"speed": 180, "car_scale": ZOOM},
-    2: {"speed": 125, "car_scale": 1},
-    3: {"speed": 150, "car_scale": ZOOM},
-    4: {"speed": 150, "car_scale": ZOOM}
-}
-
 CAR_BASE_WIDTH = 60
 CAR_BASE_HEIGHT = 36
 
 MIN_AREA = 300
+
+
+# Customize speed and car size for each circuit.
+CIRCUIT_SETTINGS = {
+    1: {"speed": 180, "car_scale": ZOOM},
+    2: {"speed": 100, "car_scale": ZOOM - (ZOOM-0.8)},
+    3: {"speed": 125, "car_scale": ZOOM - (ZOOM-0.8)},
+    4: {"speed": 110, "car_scale": ZOOM}
+}
+
 
 START_POSITIONS = {
     1: {"x": 480, "y": 880, "angle": 0},
