@@ -2,7 +2,6 @@ import math
 import sys
 import time
 from pathlib import Path
-
 import cv2
 
 # detector_hsv.py está en la carpeta "HSV calibration" del proyecto.
