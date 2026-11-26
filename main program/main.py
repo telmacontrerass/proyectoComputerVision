@@ -2,7 +2,7 @@
 import cv2
 import numpy as np
 
-import password_function
+import password.password_function
 from race_mode.race import iniciar_modo_carrera
 
 
@@ -433,7 +433,7 @@ def main():
 
         # Update password color ranges
 
-        password_function.RANGOS = color_ranges
+        password.password_function.RANGOS = color_ranges
 
         # Prepare marker ranges for race mode
 
@@ -487,7 +487,7 @@ def main():
 
             cv2.destroyWindow("Menu")
 
-            correcta = password_function.comprobar_contrasena(contrasena, color_ranges)
+            correcta = password.password_function.comprobar_contrasena(contrasena, color_ranges)
 
             if correcta:
 
