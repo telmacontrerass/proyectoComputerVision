@@ -1,9 +1,9 @@
-
 import cv2
 import numpy as np
 
-import password_function
+import password.password_function
 from race_mode.race import iniciar_modo_carrera
+from training_mode.training_function import iniciar_modo_entrenamiento
 
 
 CONTRASENA_PRACTICA = ["azul", "amarillo", "rosa", "morado"]
@@ -13,7 +13,6 @@ ANCHO = 800
 ALTO = 500
 
 seleccion = None
-
 
 
 def calibrate_color(color_name):
@@ -140,6 +139,9 @@ def calibrate_color(color_name):
                     break
 
                 state["frame"] = frame.copy()
+
+            if state["frame"] is None:
+                continue
 
             frame = state["frame"].copy()
 
@@ -286,8 +288,7 @@ def mostrar_menu():
         3
     )
 
-    # Practice button
-
+    # Training button
     cv2.rectangle(
         pantalla,
         (150, 220),
@@ -298,16 +299,15 @@ def mostrar_menu():
 
     cv2.putText(
         pantalla,
-        "PRACTICA",
-        (195, 280),
+        "ENTRENAMIENTO",
+        (160, 280),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.9,
+        0.75,
         (255, 255, 255),
         2
     )
 
     # Race button
-
     cv2.rectangle(
         pantalla,
         (420, 220),
@@ -339,84 +339,6 @@ def mostrar_menu():
     return pantalla
 
 
-def mostrar_modo(modo):
-
-    pantalla = np.zeros(
-        (ALTO, ANCHO, 3),
-        dtype=np.uint8
-    )
-
-    texto = "MODO " + modo.upper()
-
-    tamaño = cv2.getTextSize(
-        texto,
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1.5,
-        3
-    )[0]
-
-    x = (ANCHO - tamaño[0]) // 2
-
-    cv2.putText(
-        pantalla,
-        texto,
-        (x, 200),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1.5,
-        (255, 255, 255),
-        3
-    )
-
-    texto2 = "EN PROCESO..."
-
-    tamaño2 = cv2.getTextSize(
-        texto2,
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1,
-        2
-    )[0]
-
-    x2 = (ANCHO - tamaño2[0]) // 2
-
-    cv2.putText(
-        pantalla,
-        texto2,
-        (x2, 280),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1,
-        (0, 255, 0),
-        2
-    )
-
-    return pantalla
-
-
-def ejecutar_practica():
-
-    pantalla = mostrar_modo("practica")
-
-    cv2.namedWindow("Menu")
-
-    cv2.imshow("Menu", pantalla)
-
-    print("Entrando en el modo práctica.")
-
-    while True:
-
-        tecla = cv2.waitKey(1) & 0xFF
-
-        if tecla == ord("q"):
-            break
-
-        if cv2.getWindowProperty(
-            "Menu",
-            cv2.WND_PROP_VISIBLE
-        ) < 1:
-            break
-
-    cv2.destroyWindow("Menu")
-
-
 def main():
 
     global seleccion
@@ -424,23 +346,18 @@ def main():
     try:
 
         # Calibrate all four colors before starting the main menu
-
         color_ranges = calibrate_colors()
 
         if color_ranges is None:
             print("No se puede iniciar el juego sin calibrar los colores.")
             return
 
-        # Update password color ranges
-
-        password_function.RANGOS = color_ranges
-
         # Prepare marker ranges for race mode
-
         race_color_ranges = {
             "rosa": color_ranges["rosa"],
             "morado": color_ranges["morado"]
-        } 
+        }
+
         while True:
 
             seleccion = None
@@ -453,7 +370,6 @@ def main():
             )
 
             # Main menu loop
-
             while seleccion is None:
 
                 pantalla = mostrar_menu()
@@ -472,7 +388,6 @@ def main():
                     return
 
             # Select password according to the chosen mode
-
             if seleccion == "practica":
 
                 contrasena = CONTRASENA_PRACTICA
@@ -484,10 +399,12 @@ def main():
                 modo = "carrera"
 
             # Close main menu while entering password
-
             cv2.destroyWindow("Menu")
 
-            correcta = password_function.comprobar_contrasena(contrasena, color_ranges)
+            correcta = password.password_function.comprobar_contrasena(
+                contrasena,
+                color_ranges
+            )
 
             if correcta:
 
@@ -495,7 +412,12 @@ def main():
 
                 if modo == "practica":
 
-                    ejecutar_practica()
+                    resultado = iniciar_modo_entrenamiento(color_ranges)
+
+                    if resultado:
+                        print("¡Has completado el entrenamiento!")
+                    else:
+                        print("Has salido del entrenamiento.")
 
                 elif modo == "carrera":
 

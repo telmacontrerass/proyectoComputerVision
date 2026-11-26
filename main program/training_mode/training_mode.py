@@ -8,7 +8,7 @@ import cv2
 carpeta_detector = Path(__file__).resolve().parent / "HSV calibration"
 sys.path.insert(0, str(carpeta_detector))
 
-from detector_hsv import COLORES_BGR, detectar_marcas, dibujar_marcas
+from HSV_calibration.detector_hsv import COLORES_BGR, detectar_marcas, dibujar_marcas
 
 
 # Ángulos medidos respecto a la posición inicial del volante.
