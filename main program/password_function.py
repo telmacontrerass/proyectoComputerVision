@@ -4,31 +4,16 @@ import numpy as np
 import time
 
 
-# Rangos HSV de los colores
-RANGOS = {
-    "rosa": [
-        ((164, 73, 147), (175, 167, 255))
-    ],
-    "azul": [
-        ((94, 95, 101), (107, 187, 199))
-    ],
-    "verde": [
-        ((34, 57, 39), (91, 134, 214))
-    ],
-    "amarillo": [
-        ((23, 47, 136), (35, 139, 250))
-    ]
-}
+# HSV color ranges
+RANGOS = {}
 
-
-# Colores para dibujar en la imagen (BGR)
+# BGR colors for visualization
 COLORES_BGR = {
     "rosa": (180, 105, 255),
     "azul": (255, 0, 0),
-    "verde": (0, 200, 0),
+    "morado": (255, 0, 255),
     "amarillo": (0, 255, 255)
 }
-
 
 # Parámetros de detección
 AREA_MINIMA = 300
@@ -124,7 +109,14 @@ def detectar_colores(frame):
 
 
 # Función que comprueba la contraseña recibida
-def comprobar_contrasena(contrasena):
+def comprobar_contrasena(contrasena, color_ranges):
+
+    global RANGOS
+
+    RANGOS = {
+        color: [rangos]
+        for color, rangos in color_ranges.items()
+    }
 
     cap = cv2.VideoCapture(0)
 
